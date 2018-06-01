@@ -118,8 +118,13 @@ if debug:
 
 # --- expectation-maximization algorithm ---
 # todo: change from fixed #iters to convergence of objective function
-iterations = 1
-for iteration in range(iterations):
+# iterations = 1
+iterations = 0
+epsilon = 1.0e-6
+err = len(soft_assignment) * epsilon * K
+# for iteration in range(iterations):
+while err >= len(soft_assignment) * epsilon * K:
+    prev_soft_assignment = copy.deepcopy(soft_assignment)
     # --- maximization step ---
 
     for term in p_term_in_cluster:
@@ -160,6 +165,13 @@ for iteration in range(iterations):
     for doc in soft_assignment:
         for cluster in soft_assignment[doc]:
             soft_assignment[doc][cluster] /= sa_denoms[doc]
+
+    err = 0
+    for doc in soft_assignment:
+        for cluster in soft_assignment[doc]:
+            err += abs(soft_assignment[doc][cluster] - prev_soft_assignment[doc][cluster])
+    iterations += 1
+print('iterations', iterations)
 
 print('a1', p_new_doc_in_cluster[1])
 print('r1', soft_assignment['1.txt'][1])
