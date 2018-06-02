@@ -5,10 +5,11 @@ import os
 import random
 import re
 import sys
+import decimal
 from fnmatch import fnmatch
 
 # defines
-DATA_PATH     = 'data2'
+DATA_PATH     = 'data'
 FILES_PATTERN = '*.txt'
 
 class Document():
@@ -36,6 +37,8 @@ class Clustering():
         self.__documents = documents
 
     def run(self, clusters, groups):
+        decimal.getcontext().prec = 320
+
         probCluster = {}       # probability of cluster
         probDocInCluster = {}  # probability of belonging document to the cluster
         probWordInCluster = {} # probability of belonging term to the clusterster
@@ -50,12 +53,12 @@ class Clustering():
                 if document in groups[cluster]:
                     probDocInCluster[document][cluster] = 1.0
                     continue
-                probDocInCluster[document][cluster] = sys.float_info.epsilon
+                probDocInCluster[document][cluster] = 0.0
 
         for word in self.__bagOfWords:
             probWordInCluster[word] = {}
             for cluster in clusters:
-                probWordInCluster[word][cluster] = sys.float_info.epsilon
+                probWordInCluster[word][cluster] = 0.0
 
         # EM algorithm
         iterations = 0
@@ -68,57 +71,54 @@ class Clustering():
             # maximization step
             for word in self.__bagOfWords:
                 for cluster in clusters:
-                    nominator = 0.0
-                    denominator = 0.0
+                    nominator = decimal.Decimal(0.0001)
+                    denominator = decimal.Decimal(0.0)
                     for document in self.__documents:
                         if self.__documents[document].contains(word):
-                            nominator += probDocInCluster[document][cluster]
-                        denominator += probDocInCluster[document][cluster]
-                    if denominator == 0.0:
-                        denominator = sys.float_info.epsilon
-                    probWordInCluster[word][cluster] = nominator / denominator
+                            nominator += decimal.Decimal(probDocInCluster[document][cluster])
+                        denominator += decimal.Decimal(probDocInCluster[document][cluster])
+                    probWordInCluster[word][cluster] = decimal.Decimal(nominator) / decimal.Decimal(denominator)
 
             for cluster in clusters:
                 probCluster[cluster] = 0
                 for document in self.__documents:
-                    probCluster[cluster] += probDocInCluster[document][cluster]
+                    probCluster[cluster] += decimal.Decimal(probDocInCluster[document][cluster])
 
             # normalize
-            norm = 0.0
+            norm = decimal.Decimal(0.0)
             for cluster in clusters:
-                norm += probCluster[cluster]
+                norm += decimal.Decimal(probCluster[cluster])
             for cluster in clusters:
-                probCluster[cluster] /= norm
+                probCluster[cluster] /= decimal.Decimal(norm)
 
             # expectation step
             denominators = {}
             for document in self.__documents:
-                denominators[document] = 0.0
+                denominators[document] = decimal.Decimal(0.0)
                 for cluster in clusters:
-                    nominator = probCluster[cluster]
+                    nominator = decimal.Decimal(probCluster[cluster])
                     for term in self.__bagOfWords:
                         if self.__documents[document].contains(term):
-                            # nominator *= probWordInCluster[term][cluster]
                             if probWordInCluster[term][cluster] > 0:
-                                # nominator *= probWordInCluster[term][cluster]
-                                nominator += math.log(probWordInCluster[term][cluster])
+                                nominator *= decimal.Decimal(probWordInCluster[term][cluster])
+                            # if probWordInCluster[term][cluster] > 0:
+                            #     nominator *= probWordInCluster[term][cluster]
+                            #     nominator += math.log(probWordInCluster[term][cluster])
                         else:
-                            # nominator *= (1 - probWordInCluster[term][cluster])
-                            if (1 - probWordInCluster[term][cluster]) > 0:
-                                # nominator *= (1 - probWordInCluster[term][cluster])
-                                nominator += math.log(1 - probWordInCluster[term][cluster])
-                    probDocInCluster[document][cluster] = nominator
-                    denominators[document] += nominator
+                            nominator *= decimal.Decimal(1 - probWordInCluster[term][cluster])
+                            # if (1 - probWordInCluster[term][cluster]) > 0:
+                            #     # nominator *= (1 - probWordInCluster[term][cluster])
+                            #     nominator += math.log(1 - probWordInCluster[term][cluster])
+                    probDocInCluster[document][cluster] = decimal.Decimal(nominator)
+                    denominators[document] += decimal.Decimal(nominator)
             for document in self.__documents:
                 for cluster in clusters:
-                    if denominators[document] == 0.0:
-                        denominators[document] = sys.float_info.epsilon
-                    probDocInCluster[document][cluster] /= denominators[document]
-            
+                    probDocInCluster[document][cluster] /= decimal.Decimal(denominators[document])
+
             errorValue = 0
             for document in self.__documents:
                 for cluster in clusters:
-                    errorValue += abs(probDocInCluster[document][cluster] - probDocInClusterPrev[document][cluster])
+                    errorValue += abs(decimal.Decimal(probDocInCluster[document][cluster]) - decimal.Decimal(probDocInClusterPrev[document][cluster]))
             iterations += 1
 
         return probDocInCluster, iterations
@@ -154,7 +154,7 @@ class Main():
                 groups[cluster].append(fileName)
                 clusters.append(cluster)
         # clusters = [1, 2]
-        # groups = {'c1': 'c1/6.txt', 'c2': 'c2/7.txt'}
+        groups = {'c1': 'c1/6.txt', 'c2': 'c2/7.txt'}
 
         clustering = Clustering(self.__bagOfWords, self.__documents)
         probDocInCluster, iterations = clustering.run(clusters, groups)
@@ -164,22 +164,36 @@ class Main():
         for cluster in clusters:
             clustersDistribution[cluster] = 0
 
+        notClusterized = 0
         for probDoc in probDocInCluster:
             maxValue = 0.0
             for cluster in clusters:
                 if probDocInCluster[probDoc][cluster] > maxValue:
                     maxValue = probDocInCluster[probDoc][cluster]
+            # sumaaa = 0
             for cluster in clusters:
+                # sumaaa += probDocInCluster[probDoc][cluster]
                 if maxValue == 0.0:
-                    print('# ' + probDoc + ':')
-                    print('  >', probDocInCluster[probDoc])
+                    notClusterized += 1
+                    print('# NOT CLUSTERIZED: ' + probDoc)
+                    # print('# ' + probDoc + ':')
+                    # print('  >', probDocInCluster[probDoc])
                     break
                 if probDocInCluster[probDoc][cluster] == maxValue:
                     clustersDistribution[cluster] += 1
-
+            # if sumaaa != 1.0:
+                # print('NOT 1.0:', probDoc, sumaaa)
+        
+        print('# Not clusterized:', notClusterized)
         print('# Clusters distribution:')
         for cluster in clusters:
             print('  > ' + str(cluster) + ': ' + str(clustersDistribution[cluster]))
+
+        # for document in probDocInCluster:
+        #     for cluster in probDocInCluster[document]:
+        #         value = float(probDocInCluster[document][cluster])
+        #         print('{} -> {} = {}'.format(document, cluster, value))
+        #     print(' ')
 
     # read all words (terms) from specified filePath
     def readWordsFromFile(self, filePath):
